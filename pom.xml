@@ -80,7 +80,7 @@
         <groovy.version>2.3.7</groovy.version>
 
         <!-- used by: accumulo* -->
-        <accumulo.version>1.6.1</accumulo.version>
+        <accumulo.version>1.7.2</accumulo.version>
         <zookeeper.version>3.4.5</zookeeper.version>
         <hadoop.version>2.3.0</hadoop.version>
 

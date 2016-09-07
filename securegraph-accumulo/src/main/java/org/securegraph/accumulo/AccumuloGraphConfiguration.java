@@ -2,12 +2,15 @@ package org.securegraph.accumulo;
 
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
+import org.apache.accumulo.core.client.ClientConfiguration;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.ZooKeeperInstance;
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken;
+import org.apache.accumulo.core.client.security.tokens.KerberosToken;
 import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.securegraph.GraphConfiguration;
 import org.securegraph.SecureGraphException;
 import org.securegraph.accumulo.serializer.JavaValueSerializer;
@@ -20,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,9 +32,14 @@ public class AccumuloGraphConfiguration extends GraphConfiguration {
 
     public static final String HDFS_CONFIG_PREFIX = "hdfs";
 
+    public static final String ACCUMULO_SECURITY_PASSWORD = "password";
+    public static final String ACCUMULO_SECURITY_KERBEROS = "kerberos";
+
     public static final String ACCUMULO_INSTANCE_NAME = "accumuloInstanceName";
     public static final String ACCUMULO_USERNAME = "username";
+    public static final String ACCUMULO_SECURITY = "security";
     public static final String ACCUMULO_PASSWORD = "password";
+    public static final String ACCUMULO_KEYTAB = "keytab";
     public static final String ZOOKEEPER_SERVERS = "zookeeperServers";
     public static final String VALUE_SERIALIZER_PROP_PREFIX = "serializer";
     public static final String TABLE_NAME_PREFIX = "tableNamePrefix";
@@ -40,7 +49,9 @@ public class AccumuloGraphConfiguration extends GraphConfiguration {
     public static final String DATA_DIR = HDFS_CONFIG_PREFIX + ".dataDir";
     public static final String USE_SERVER_SIDE_ELEMENT_VISIBILITY_ROW_FILTER = "useServerSideElementVisibilityRowFilter";
 
+    public static final String DEFAULT_ACCUMULO_SECURITY = ACCUMULO_SECURITY_PASSWORD;
     public static final String DEFAULT_ACCUMULO_PASSWORD = "password";
+    public static final String DEFAULT_ACCUMULO_KEYTAB = "/etc/security/keytabs/user.keytab";
     public static final String DEFAULT_VALUE_SERIALIZER = JavaValueSerializer.class.getName();
     public static final String DEFAULT_ACCUMULO_USERNAME = "root";
     public static final String DEFAULT_ACCUMULO_INSTANCE_NAME = "securegraph";
@@ -74,8 +85,33 @@ public class AccumuloGraphConfiguration extends GraphConfiguration {
 
     public Connector createConnector() throws AccumuloSecurityException, AccumuloException {
         LOGGER.info("Connecting to accumulo instance [{}] zookeeper servers [{}]", this.getAccumuloInstanceName(), this.getZookeeperServers());
-        ZooKeeperInstance instance = new ZooKeeperInstance(this.getAccumuloInstanceName(), this.getZookeeperServers());
-        return instance.getConnector(this.getAccumuloUsername(), this.getAuthenticationToken());
+        String security = getAccumuloSecurity();
+        if (security.equals(ACCUMULO_SECURITY_PASSWORD)) {
+            LOGGER.info("Using password security for [{}]", this.getAccumuloUsername());
+            ZooKeeperInstance instance = new ZooKeeperInstance(this.getAccumuloInstanceName(), this.getZookeeperServers());
+            return instance.getConnector(this.getAccumuloUsername(), this.getAuthenticationToken());
+        } else if (security.equals(ACCUMULO_SECURITY_KERBEROS)) {
+            LOGGER.info("Using kerberos security for [{}]", this.getAccumuloUsername());
+            try {
+                UserGroupInformation ugi = UserGroupInformation.loginUserFromKeytabAndReturnUGI(
+                        this.getAccumuloUsername(), this.getAccumuloKeytab());
+                return ugi.doAs(new PrivilegedExceptionAction<Connector>() {
+                    @Override
+                    public Connector run() throws Exception {
+                        LOGGER.info("USING [{}]", UserGroupInformation.getCurrentUser().getUserName());
+                        KerberosToken krbToken = new KerberosToken();
+                        ZooKeeperInstance instance = new ZooKeeperInstance(getAccumuloInstanceName(), getZookeeperServers(), 30000);
+                        return instance.getConnector(krbToken.getPrincipal(), krbToken);
+                    }
+                });
+            } catch (InterruptedException | IOException e) {
+                LOGGER.error("Could not create accumulo connector: " + e, e);
+                throw new AccumuloException(e);
+            }
+        } else {
+            LOGGER.error("No such accumulo security type '{}'", security);
+            throw new AccumuloException("No such accumulo security type '" + security + "'");
+        }
     }
 
     public FileSystem createFileSystem() throws URISyntaxException, IOException, InterruptedException {
@@ -104,8 +140,14 @@ public class AccumuloGraphConfiguration extends GraphConfiguration {
         return new PasswordToken(password);
     }
 
+    public String getAccumuloSecurity() {
+        return getString(ACCUMULO_SECURITY, DEFAULT_ACCUMULO_SECURITY);
+    }
     public String getAccumuloUsername() {
         return getString(ACCUMULO_USERNAME, DEFAULT_ACCUMULO_USERNAME);
+    }
+    public String getAccumuloKeytab() {
+        return getString(ACCUMULO_KEYTAB, DEFAULT_ACCUMULO_KEYTAB);
     }
 
     public String getAccumuloInstanceName() {

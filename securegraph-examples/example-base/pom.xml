@@ -91,6 +91,10 @@
             <url>http://bits.lumify.io/m2/releases/</url>
         </repository>
         <repository>
+            <id>lumify-public</id>
+            <url>http://bits.lumify.io/nexus/content/groups/public/</url>
+        </repository>
+        <repository>
             <snapshots>
                 <enabled>true</enabled>
                 <updatePolicy>always</updatePolicy>

@@ -1,7 +1,7 @@
 package org.securegraph.accumulo.migrations;
 
 import com.beust.jcommander.Parameter;
-import org.apache.accumulo.core.cli.ClientOpts;
+import org.apache.accumulo.core.cli.MapReduceClientOnRequiredTable;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.mapreduce.AccumuloInputFormat;
 import org.apache.accumulo.core.client.mapreduce.AccumuloOutputFormat;
@@ -40,7 +40,7 @@ public abstract class MRMigrationBase extends Configured implements Tool {
         return new AccumuloGraphConfiguration(conf, conf.get("MRMigrationBase.config.prefix"));
     }
 
-    protected abstract static class Opts extends ClientOpts {
+    protected abstract static class Opts extends MapReduceClientOnRequiredTable {
         @Parameter(
                 names = {"-cp", "--configprefix"},
                 description = "Configuration prefix"
@@ -51,8 +51,8 @@ public abstract class MRMigrationBase extends Configured implements Tool {
         public void setAccumuloConfigs(Job job) throws AccumuloSecurityException {
             super.setAccumuloConfigs(job);
 
-            AccumuloInputFormat.setConnectorInfo(job, this.principal, this.getToken());
-            AccumuloOutputFormat.setConnectorInfo(job, this.principal, this.getToken());
+            AccumuloInputFormat.setConnectorInfo(job, getPrincipal(), this.getToken());
+            AccumuloOutputFormat.setConnectorInfo(job, getPrincipal(), this.getToken());
 
             AccumuloInputFormat.setInputTableName(job, getTableName());
             AccumuloInputFormat.setScanAuthorizations(job, this.auths);
@@ -63,7 +63,7 @@ public abstract class MRMigrationBase extends Configured implements Tool {
             job.getConfiguration().set("MRMigrationBase.output.tableName", getTableName());
         }
 
-        protected abstract String getTableName();
+        public abstract String getTableName();
     }
 
     protected static class OptsWithTableName extends Opts {
@@ -74,7 +74,7 @@ public abstract class MRMigrationBase extends Configured implements Tool {
         public String tableName = System.getProperty("table.name");
 
         @Override
-        protected String getTableName() {
+        public String getTableName() {
             return tableName;
         }
     }
